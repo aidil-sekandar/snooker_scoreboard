@@ -4,12 +4,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {},
-      colors: {
-        bodyColor: "#0A192F",
-        cardColor: "#112240",
-        textContent: "#8892B0",
-        themePrimary: "#64FFDA"
-      },
+      colors: {},
     },
   },
   plugins: [],

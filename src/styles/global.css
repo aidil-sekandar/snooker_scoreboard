@@ -1,26 +1,45 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 .main-layout {
   @apply px-6 max-w-[60rem] mx-auto mt-5;
 }
 
 body {
-  background: #343172;
-  background: linear-gradient(
-    90deg,
-    rgba(52, 49, 114, 1) 0%,
-    rgba(56, 131, 143, 1) 50%,
-    rgba(44, 73, 131, 1) 100%
-  );
+  font-family: "Geist", sans-serif;
+  background-color: #181824;
   color: white;
 }
 
 .background {
-  /* From https://css.glass */
-  background: rgba(255, 255, 255, 0.1);
+  background-color: #232334;
+  box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
+}
+
+button {
+  @apply transform transition-transform 
+    duration-100
+    hover:scale-105
+    active:scale-105;
+}
+
+.ball_button {
+  box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  color: white;
+  font-size: 2rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+.funcButton {
+  padding: 0.8em 1em;
   border-radius: 10px;
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  font-size: 1.3rem;
+  box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
 }
