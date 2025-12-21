@@ -2,12 +2,16 @@ type PlayerWindowProps = {
   name: string;
   score: number;
   isTurn?: boolean;
+  shots: ("red" | "yellow" | "green" | "brown" | "blue" | "pink" | "black")[];
+  ballClasses: Record<string, string>;
 };
 
 export default function PlayerWindow({
   name,
   score,
   isTurn = false,
+  shots,
+  ballClasses,
 }: PlayerWindowProps) {
   return (
     <div className="background rounded-sm p grid">
@@ -22,7 +26,17 @@ export default function PlayerWindow({
       </div>
 
       <div className="flex justify-center">
-        <p className="text-8xl h-fit pb-5">{score}</p>
+        <p className="text-8xl h-fit pb-3">{score}</p>
+      </div>
+
+      {/* Shot History */}
+      <div className="flex flex-wrap justify-center gap-1 pb-2">
+        {shots.map((color, index) => (
+          <span
+            key={index}
+            className={`w-3 h-3 rounded-full ${ballClasses[color]}`}
+          />
+        ))}
       </div>
     </div>
   );

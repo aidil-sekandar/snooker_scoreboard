@@ -31,7 +31,6 @@ button {
   border-radius: 50%;
   color: white;
   font-size: 2rem;
-  cursor: pointer;
   align-items: center;
   justify-content: center;
 }
@@ -40,6 +39,6 @@ button {
   padding: 0.8em 1em;
   border-radius: 10px;
   color: white;
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
 }
