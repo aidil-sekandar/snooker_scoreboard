@@ -15,8 +15,12 @@ const BALL_POINTS = {
 type BallColor = keyof typeof BALL_POINTS;
 type ExpectedBall = "red" | "color";
 
+// Clearance order after reds are gone
+const CLEARANCE_ORDER: BallColor[] = ["yellow", "green", "brown", "blue", "pink", "black"];
+
 export default function MainWindow() {
   // --- Pre-game setup ---
+  const [matchTitle, setMatchTitle] = useState("");
   const [player1Name, setPlayer1Name] = useState("");
   const [player2Name, setPlayer2Name] = useState("");
   const [totalFrames, setTotalFrames] = useState(1);
@@ -35,6 +39,10 @@ export default function MainWindow() {
   const [currentBreak, setCurrentBreak] = useState(0);
   const [redCount, setRedCount] = useState(15);
   const [gameOver, setGameOver] = useState(false);
+  const [frameOver, setFrameOver] = useState(false);
+  const [frameWinner, setFrameWinner] = useState<string | null>(null);
+  const [clearanceIndex, setClearanceIndex] = useState(0);
+  const [lastRedColorPending, setLastRedColorPending] = useState(false);
 
   // --- Shot history ---
   const [player1Shots, setPlayer1Shots] = useState<BallColor[]>([]);
@@ -81,9 +89,46 @@ export default function MainWindow() {
 
   // --- Handle ball pot ---
   const potBall = (color: BallColor) => {
-    if (gameOver || isFoulActive) return;
+    if (gameOver || isFoulActive || frameOver) return;
 
-    if ((expectedBall === "red" && color !== "red") || (expectedBall === "color" && color === "red")) return;
+    const sequenceActive = redCount === 0 && !lastRedColorPending;
+
+    // --- Sequence potting ---
+    if (sequenceActive) {
+      const expectedColor = CLEARANCE_ORDER[clearanceIndex];
+      if (color !== expectedColor) return;
+
+      const points = BALL_POINTS[color];
+      if (isFirstPlayerTurn) {
+        setFirstScore(prev => prev + points);
+        setPlayer1Shots(prev => [...prev, color]);
+      } else {
+        setSecondScore(prev => prev + points);
+        setPlayer2Shots(prev => [...prev, color]);
+      }
+      setCurrentBreak(prev => prev + points);
+
+      // Last black ends frame
+      if (color === "black") {
+        const winner =
+          firstScore > secondScore
+            ? player1Name
+            : secondScore > firstScore
+              ? player2Name
+              : "Draw";
+        setFrameWinner(winner);
+        setFrameOver(true);
+        return;
+      }
+
+      // Move to next color in sequence
+      setClearanceIndex(prev => Math.min(prev + 1, CLEARANCE_ORDER.length - 1));
+      return;
+    }
+
+    // --- Normal potting ---
+    if ((expectedBall === "red" && color !== "red") || (expectedBall === "color" && color === "red"))
+      return;
 
     const points = BALL_POINTS[color];
     if (isFirstPlayerTurn) {
@@ -96,16 +141,21 @@ export default function MainWindow() {
     setCurrentBreak(prev => prev + points);
 
     if (color === "red") {
+      if (redCount === 1) setLastRedColorPending(true);
       setRedCount(prev => Math.max(prev - 1, 0));
       setExpectedBall("color");
     } else {
-      setExpectedBall("red");
+      if (lastRedColorPending) {
+        setLastRedColorPending(false);
+        setClearanceIndex(0); // start sequence potting
+      }
+      setExpectedBall(redCount > 0 ? "red" : lastRedColorPending ? "color" : "sequence");
     }
   };
 
   // --- Undo last shot ---
   const undoLastShot = () => {
-    if (gameOver || isFoulActive) return;
+    if (gameOver || isFoulActive || frameOver) return;
     const shots = isFirstPlayerTurn ? player1Shots : player2Shots;
     if (shots.length === 0) return;
 
@@ -124,15 +174,12 @@ export default function MainWindow() {
 
     setExpectedBall(lastBall === "red" ? "red" : "color");
     if (lastBall === "red") setRedCount(prev => Math.min(prev + 1, 15));
+    if (redCount === 0) setClearanceIndex(prev => Math.max(prev - 1, 0));
   };
 
   // --- Foul ---
   const foul = () => {
-    if (gameOver || isFoulActive) return;
-    const points = 4;
-    if (isFirstPlayerTurn) setSecondScore(prev => prev + points);
-    else setFirstScore(prev => prev + points);
-
+    if (gameOver || isFoulActive || frameOver) return;
     setCurrentBreak(0);
     setIsFirstPlayerTurn(prev => !prev);
     setExpectedBall("red");
@@ -140,7 +187,7 @@ export default function MainWindow() {
   };
 
   const handleFoulPoints = (points: 4 | 5 | 6 | 7) => {
-    if (gameOver || !isFoulActive) return;
+    if (gameOver || !isFoulActive || frameOver) return;
     if (isFirstPlayerTurn) setFirstScore(prev => prev + points);
     else setSecondScore(prev => prev + points);
 
@@ -151,7 +198,7 @@ export default function MainWindow() {
 
   // --- End turn ---
   const endTurn = () => {
-    if (gameOver || isFoulActive) return;
+    if (gameOver || isFoulActive || frameOver) return;
     setIsFirstPlayerTurn(prev => !prev);
     setCurrentBreak(0);
     setExpectedBall("red");
@@ -174,6 +221,10 @@ export default function MainWindow() {
     setExpectedBall("red");
     setFrameTime(0);
     setIsFoulActive(false);
+    setFrameOver(false);
+    setFrameWinner(null);
+    setClearanceIndex(0);
+    setLastRedColorPending(false);
 
     if (frameNumber >= totalFrames) setGameOver(true);
   };
@@ -195,17 +246,25 @@ export default function MainWindow() {
     setExpectedBall("red");
     setIsFoulActive(false);
     setFrameTime(0);
+    setFrameOver(false);
+    setFrameWinner(null);
+    setClearanceIndex(0);
+    setLastRedColorPending(false);
+    setMatchTitle("");
+    setPlayer1Name("");
+    setPlayer2Name("");
   };
 
   const difference = Math.abs(firstScore - secondScore);
 
-  // --- Pre-game setup ---
+  // --- Start game ---
   const startGame = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!player1Name || !player2Name || totalFrames < 1) return;
+    if (!matchTitle || !player1Name || !player2Name || totalFrames < 1) return;
     setGameStarted(true);
   };
 
+  // --- Pre-game setup ---
   if (!gameStarted) {
     return (
       <div className="flex flex-col justify-center items-center">
@@ -213,7 +272,18 @@ export default function MainWindow() {
           className="flex flex-col gap-4 bg-[#232334] p-6 rounded-lg shadow-lg text-black min-w-[40rem]"
           onSubmit={startGame}
         >
-          <h2 className="text-3xl text-white text-center font-semibold">Game Setup</h2>
+          <h2 className="text-3xl text-white text-center font-semibold">Snooker Scoreboard</h2>
+
+          <h3 className="text-white">Match Title:</h3>
+          <input
+            type="text"
+            placeholder="Enter match title"
+            value={matchTitle}
+            onChange={e => setMatchTitle(e.target.value)}
+            className="p-2 rounded border"
+            required
+          />
+
           <h3 className="text-white">Players' name:</h3>
           <input
             type="text"
@@ -231,6 +301,7 @@ export default function MainWindow() {
             className="p-2 rounded border"
             required
           />
+
           <h3 className="text-white">Number of frames to be played:</h3>
           <input
             type="number"
@@ -251,6 +322,12 @@ export default function MainWindow() {
   // --- Render game ---
   return (
     <>
+      {/* Match Title */}
+      {gameStarted && (
+        <h1 className="text-center font-bold text-5xl mb-6 text-white">{matchTitle}</h1>
+      )}
+
+      {/* Player Windows and Center Stats */}
       <div className="rounded-2xl grid grid-cols-[1fr_300px_1fr] gap-2">
         <PlayerWindow
           name={player1Name}
@@ -277,7 +354,21 @@ export default function MainWindow() {
             <span className="flex-grow">Difference</span>
             <span className="font-bold text-yellow-200">{difference}</span>
           </div>
-          {gameOver && (
+          {frameOver && (
+            <div className="fixed inset-0 flex justify-center items-center bg-black/50 z-50">
+              <div className="bg-[#2c2c3f] p-6 rounded-lg flex flex-col gap-4 w-96 text-center shadow-lg">
+                <p className="text-lg font-semibold">{frameWinner} wins the frame!</p>
+                <button
+                  onClick={endFrame}
+                  className="bg-blue-600 text-white px-4 py-2 rounded"
+                >
+                  Next Frame
+                </button>
+              </div>
+            </div>
+          )}
+
+          {gameOver && !frameOver && (
             <div className="text-center text-xl font-bold mt-4">
               Game Over!{" "}
               {firstFrame > secondFrame
@@ -297,47 +388,48 @@ export default function MainWindow() {
         />
       </div>
 
-      {/* Ball Section */}
-      {!gameOver && !isFoulActive && (
+      {/* Ball Buttons */}
+      {!gameOver && !isFoulActive && !frameOver && (
         <section className="mt-2 background rounded-sm py-6">
           <div className="flex gap-4 justify-center items-center">
-            {/* Red */}
-            <span className="flex items-center">
-              <button
-                className={`ball_button mr-2 flex items-center justify-center text-white text-xl font-semibold
-                  ${expectedBall === "red" ? "bg-red-600" : "bg-red-600/30 cursor-not-allowed"}`}
-                onClick={() => potBall("red")}
-                disabled={expectedBall !== "red"}
-              >
-                {BALL_POINTS.red}
-              </button>
-              <span className="text-[2rem]">× {redCount}</span>
-            </span>
 
-            {/* Color balls */}
-            {(["yellow", "green", "brown", "blue", "pink", "black"] as BallColor[]).map(color => (
-              <button
-                key={color}
-                onClick={() => potBall(color)}
-                disabled={expectedBall !== "color"}
-                className={`ball_button flex items-center justify-center text-white text-xl font-semibold
-                  ${expectedBall === "color" ? BALL_CLASSES[color] : `${BALL_CLASSES[color]} opacity-30 cursor-not-allowed`}`}
-              >
-                {BALL_POINTS[color]}
-              </button>
-            ))}
+            {(["red", "yellow", "green", "brown", "blue", "pink", "black"] as BallColor[]).map(color => {
+              let isDisabled = false;
+
+              // Determine which balls are active
+              if (expectedBall === "red") isDisabled = color !== "red";
+              else if (expectedBall === "color") isDisabled = color === "red";
+              else if (expectedBall === "sequence") isDisabled = CLEARANCE_ORDER[clearanceIndex] !== color;
+
+              // Set button classes based on active/disabled state
+              const buttonClass = isDisabled
+                ? `${BALL_CLASSES[color]} opacity-30 cursor-not-allowed` // greyed out
+                : BALL_CLASSES[color]; // fully colored
+
+              return (
+                <button
+                  key={color}
+                  onClick={() => potBall(color)}
+                  disabled={isDisabled}
+                  className={`ball_button flex items-center justify-center text-white text-xl font-semibold ${buttonClass}`}
+                >
+                  {BALL_POINTS[color]}
+                  {color === "red" && redCount > 0 && <span className="ml-2 text-2xl">× {redCount}</span>}
+                </button>
+              );
+            })}
           </div>
         </section>
       )}
 
-      {/* Foul Points Section */}
+      {/* Foul Points */}
       {!gameOver && isFoulActive && (
         <section className="mt-2 background rounded-sm py-6">
           <div className="flex gap-4 justify-center items-center">
             {[4, 5, 6, 7].map(val => (
               <button
                 key={val}
-                className={`ball_button bg-gray-600 flex items-center justify-center text-white text-xl font-semibold`}
+                className="ball_button bg-gray-600 flex items-center justify-center text-white text-xl font-semibold"
                 onClick={() => handleFoulPoints(val as 4 | 5 | 6 | 7)}
               >
                 {val}
@@ -348,51 +440,52 @@ export default function MainWindow() {
       )}
 
       {/* Function Buttons */}
-      {!gameOver && (
-        <section className="mt-2 background rounded-sm py-6">
-          <div className="flex gap-4 justify-center items-center">
-            {/* Undo */}
-            <button
-              onClick={undoLastShot}
-              disabled={isFoulActive || (isFirstPlayerTurn ? player1Shots.length === 0 : player2Shots.length === 0)}
-              className={`funcButton bg-green-600 text-black ${isFoulActive || (isFirstPlayerTurn ? player1Shots.length : player2Shots.length) === 0
+      <section className="mt-2 background rounded-sm py-6">
+        <div className="flex gap-4 justify-center items-center">
+          {!gameOver ? (
+            <>
+              <button
+                onClick={undoLastShot}
+                disabled={isFoulActive || (isFirstPlayerTurn ? player1Shots.length === 0 : player2Shots.length === 0)}
+                className={`funcButton bg-green-600 text-black ${isFoulActive || (isFirstPlayerTurn ? player1Shots.length : player2Shots.length) === 0
                   ? "opacity-30 cursor-not-allowed"
                   : ""
-                }`}
-            >
-              Undo
-            </button>
+                  }`}
+              >
+                Undo
+              </button>
 
-            {/* Foul */}
-            <button
-              onClick={foul}
-              disabled={isFoulActive}
-              className={`funcButton bg-purple-600 ${isFoulActive ? "opacity-30 cursor-not-allowed" : ""}`}
-            >
-              Foul
-            </button>
+              <button
+                onClick={foul}
+                disabled={isFoulActive}
+                className={`funcButton bg-purple-600 ${isFoulActive ? "opacity-30 cursor-not-allowed" : ""}`}
+              >
+                Foul
+              </button>
 
-            {/* End Turn */}
-            <button
-              onClick={endTurn}
-              disabled={isFoulActive}
-              className={`funcButton bg-gray-600 ${isFoulActive ? "opacity-30 cursor-not-allowed" : ""}`}
-            >
-              End Turn
-            </button>
+              <button
+                onClick={endTurn}
+                disabled={isFoulActive}
+                className={`funcButton bg-gray-600 ${isFoulActive ? "opacity-30 cursor-not-allowed" : ""}`}
+              >
+                End Turn
+              </button>
 
-            {/* End Frame */}
-            <button onClick={() => setShowEndFrameConfirm(true)} className="funcButton bg-blue-600">
-              End Frame
-            </button>
+              <button onClick={() => setShowEndFrameConfirm(true)} className="funcButton bg-blue-600">
+                End Frame
+              </button>
 
-            {/* End Game */}
-            <button onClick={() => setShowEndGameConfirm(true)} className="funcButton bg-red-600">
-              End Match
+              <button onClick={() => setShowEndGameConfirm(true)} className="funcButton bg-red-600">
+                End Match
+              </button>
+            </>
+          ) : (
+            <button onClick={resetGame} className="funcButton bg-green-600 text-white px-4 py-2 rounded">
+              Set a New Match
             </button>
-          </div>
-        </section>
-      )}
+          )}
+        </div>
+      </section>
 
       {/* End Frame & Game Confirmation */}
       {showEndFrameConfirm && (
