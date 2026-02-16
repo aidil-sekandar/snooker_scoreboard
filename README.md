@@ -1,14 +1,12 @@
 # Online Snooker Scoreboard
 
-Real-time snooker scoreboard for two players, built with Astro + React + TypeScript.
+Real-time snooker scoreboard, built with Astro + React + TypeScript.
+
+<img width="1508" height="940" alt="image" src="https://github.com/user-attachments/assets/423fc26e-5375-4c3d-9b39-759c73a045d1" />
 
 ## Version
 
 `v1.0.0`
-
-## License
-
-This project is licensed under the MIT License. See `LICENSE`.
 
 ## Highlights
 
@@ -66,15 +64,11 @@ npm run build
 npm run preview
 ```
 
-## How Scoring Flow Works
+## License
 
-1. Pot a red (`1`) first.
-2. Then pot a color (`2` to `7`).
-3. Continue red -> color until all 15 reds are gone.
-4. After the final red and its required color, enter sequence mode.
-5. Sequence mode allows only: yellow -> green -> brown -> blue -> pink -> black.
+This project is licensed under the MIT License. See `LICENSE`.
 
-## Contributing
+## Contributions
 
 Contributions are welcome through issues and pull requests.
 
