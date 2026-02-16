@@ -1,44 +1,80 @@
 # Online Snooker Scoreboard
 
-A real-time snooker scoreboard web app built with **Astro**, **React components**, and **TypeScript**, designed to track scores, breaks, frames, and fouls for two players. Ideal for casual play, tournaments, or practice sessions. Deployed using **Netlify**.
+Real-time snooker scoreboard for two players, built with Astro + React + TypeScript.
 
-<img width="600" alt="Screenshot 2025-12-22 045201" src="https://github.com/user-attachments/assets/daaa10ee-a43e-4d8e-bcd3-3c4801e3e0be" />
+## Version
 
-> **Note:** This app is optimized for desktop devices. It may not work correctly on smaller screens like mobile phones.
+`v1.0.0`
 
-## Features
+## License
 
-- Pre-game setup for player names and number of frames  
-- Real-time scoring for both players  
-- Break tracking per turn  
-- Frame tracking and game-over detection  
-- Live frame timer  
-- Enforces red/color ball order (like real snooker rules)  
-- Undo last shot functionality  
-- Foul mode with selectable penalty points (4, 5, 6, 7)  
-- End turn, end frame, and reset game functionality  
-- Simple, responsive, and user-friendly interface  
+This project is licensed under the MIT License. See `LICENSE`.
 
-## Technologies Used
+## Highlights
 
-- **Astro** – Framework  
-- **React** – UI components  
-- **TypeScript** – Type safety  
-- **TailwindCSS** – Styling  
-- **Netlify** – Deployment  
+- Pre-match setup:
+  - Match title
+  - Player names
+  - Number of frames
+- Real-time scoring for both players
+- Turn highlight (`Your Turn`)
+- Live frame timer
+- Current break tracking
+- Frame score tracking and match winner detection
+- Snooker ball-rule enforcement:
+  - Red <-> color alternation while reds remain
+  - 15-red handling
+  - Automatic transition to color clearance sequence
+  - Sequence order enforcement: yellow -> green -> brown -> blue -> pink -> black
+- Active/inactive ball controls:
+  - Only legal ball is clickable
+  - Illegal balls are disabled and greyed out
+- Foul flow:
+  - Foul mode
+  - Selectable foul points: 4, 5, 6, 7
+- Marking timeline + robust undo:
+  - Global event history for pots/misses/fouls
+  - Undo restores full previous state (scores, turn highlight, expected ball, sequence state)
+- Per-player pot history panel:
+  - Pot markers by ball color
+  - Foul markers shown as grey circles with foul points
+  - Miss events are kept in state history but hidden from pot history UI
+- End-turn, end-frame, end-match controls
+- Confirmation modals for end frame/match
+- Reset to new match
+- Responsive layout for desktop/tablet/mobile
 
-## How to Use
+## Tech Stack
 
-1. Enter player names and the number of frames.  
-2. Click **Start Game**.  
-3. Use the ball buttons to add points according to game rules:  
-   - Red balls can only be potted when expected.  
-   - Color balls can only be potted after a red.  
-4. Use **Undo** to remove the last shot.  
-5. Use **Foul** to add penalty points to the opponent and select the foul points.  
-6. End a turn or frame using **End Turn** or **End Frame**.  
-7. Reset the game anytime with **Reset Game**.  
+- Astro
+- React
+- TypeScript
+- TailwindCSS
+- Netlify adapter (`@astrojs/netlify`)
+
+## Run Locally
+
+```bash
+npm install
+npm run dev
+```
+
+Build production output:
+
+```bash
+npm run build
+npm run preview
+```
+
+## How Scoring Flow Works
+
+1. Pot a red (`1`) first.
+2. Then pot a color (`2` to `7`).
+3. Continue red -> color until all 15 reds are gone.
+4. After the final red and its required color, enter sequence mode.
+5. Sequence mode allows only: yellow -> green -> brown -> blue -> pink -> black.
 
 ## Contributing
 
-Feel free to fork this project and submit pull requests. All contributions are welcome!
+Contributions are welcome through issues and pull requests.
+

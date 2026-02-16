@@ -13,10 +13,40 @@ const BALL_POINTS = {
 } as const;
 
 type BallColor = keyof typeof BALL_POINTS;
-type ExpectedBall = "red" | "color";
+type ExpectedBall = "red" | "color" | "sequence";
 
 // Clearance order after reds are gone
 const CLEARANCE_ORDER: BallColor[] = ["yellow", "green", "brown", "blue", "pink", "black"];
+
+type PlayerId = 1 | 2;
+
+type HistoryEvent =
+  | { id: number; player: PlayerId; type: "pot"; color: BallColor; points: number }
+  | { id: number; player: PlayerId; type: "miss" }
+  | { id: number; player: PlayerId; type: "foul"; points: 4 | 5 | 6 | 7 };
+
+type GameSnapshot = {
+  frameTime: number;
+  firstScore: number;
+  secondScore: number;
+  firstFrame: number;
+  secondFrame: number;
+  frameNumber: number;
+  showEndFrameConfirm: boolean;
+  showEndGameConfirm: boolean;
+  isFirstPlayerTurn: boolean;
+  currentBreak: number;
+  redCount: number;
+  gameOver: boolean;
+  frameOver: boolean;
+  frameWinner: string | null;
+  clearanceIndex: number;
+  lastRedColorPending: boolean;
+  expectedBall: ExpectedBall;
+  isFoulActive: boolean;
+  history: HistoryEvent[];
+  eventCounter: number;
+};
 
 export default function MainWindow() {
   // --- Pre-game setup ---
@@ -44,9 +74,10 @@ export default function MainWindow() {
   const [clearanceIndex, setClearanceIndex] = useState(0);
   const [lastRedColorPending, setLastRedColorPending] = useState(false);
 
-  // --- Shot history ---
-  const [player1Shots, setPlayer1Shots] = useState<BallColor[]>([]);
-  const [player2Shots, setPlayer2Shots] = useState<BallColor[]>([]);
+  // --- Marking history / undo ---
+  const [history, setHistory] = useState<HistoryEvent[]>([]);
+  const [eventCounter, setEventCounter] = useState(0);
+  const [undoStack, setUndoStack] = useState<GameSnapshot[]>([]);
 
   // --- Ball logic ---
   const [expectedBall, setExpectedBall] = useState<ExpectedBall>("red");
@@ -87,6 +118,76 @@ export default function MainWindow() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const getCurrentPlayerId = (): PlayerId => (isFirstPlayerTurn ? 1 : 2);
+
+  const createSnapshot = (): GameSnapshot => ({
+    frameTime,
+    firstScore,
+    secondScore,
+    firstFrame,
+    secondFrame,
+    frameNumber,
+    showEndFrameConfirm,
+    showEndGameConfirm,
+    isFirstPlayerTurn,
+    currentBreak,
+    redCount,
+    gameOver,
+    frameOver,
+    frameWinner,
+    clearanceIndex,
+    lastRedColorPending,
+    expectedBall,
+    isFoulActive,
+    history,
+    eventCounter,
+  });
+
+  const pushUndoSnapshot = () => {
+    setUndoStack(prev => [...prev, createSnapshot()]);
+  };
+
+  const restoreSnapshot = (snapshot: GameSnapshot) => {
+    setFrameTime(snapshot.frameTime);
+    setFirstScore(snapshot.firstScore);
+    setSecondScore(snapshot.secondScore);
+    setFirstFrame(snapshot.firstFrame);
+    setSecondFrame(snapshot.secondFrame);
+    setFrameNumber(snapshot.frameNumber);
+    setShowEndFrameConfirm(snapshot.showEndFrameConfirm);
+    setShowEndGameConfirm(snapshot.showEndGameConfirm);
+    setIsFirstPlayerTurn(snapshot.isFirstPlayerTurn);
+    setCurrentBreak(snapshot.currentBreak);
+    setRedCount(snapshot.redCount);
+    setGameOver(snapshot.gameOver);
+    setFrameOver(snapshot.frameOver);
+    setFrameWinner(snapshot.frameWinner);
+    setClearanceIndex(snapshot.clearanceIndex);
+    setLastRedColorPending(snapshot.lastRedColorPending);
+    setExpectedBall(snapshot.expectedBall);
+    setIsFoulActive(snapshot.isFoulActive);
+    setHistory(snapshot.history);
+    setEventCounter(snapshot.eventCounter);
+  };
+
+  const appendHistory = (event: Omit<HistoryEvent, "id">) => {
+    setHistory(prev => [...prev, { ...event, id: eventCounter }]);
+    setEventCounter(prev => prev + 1);
+  };
+
+  const applyExpectedBallAfterTurnChange = () => {
+    if (redCount === 0) {
+      // If the color after the last red was missed/fouled, next legal ball is yellow.
+      if (lastRedColorPending) {
+        setLastRedColorPending(false);
+        setClearanceIndex(0);
+      }
+      setExpectedBall("sequence");
+      return;
+    }
+    setExpectedBall("red");
+  };
+
   // --- Handle ball pot ---
   const potBall = (color: BallColor) => {
     if (gameOver || isFoulActive || frameOver) return;
@@ -98,14 +199,15 @@ export default function MainWindow() {
       const expectedColor = CLEARANCE_ORDER[clearanceIndex];
       if (color !== expectedColor) return;
 
+      pushUndoSnapshot();
+
       const points = BALL_POINTS[color];
       if (isFirstPlayerTurn) {
         setFirstScore(prev => prev + points);
-        setPlayer1Shots(prev => [...prev, color]);
       } else {
         setSecondScore(prev => prev + points);
-        setPlayer2Shots(prev => [...prev, color]);
       }
+      appendHistory({ player: getCurrentPlayerId(), type: "pot", color, points });
       setCurrentBreak(prev => prev + points);
 
       // Last black ends frame
@@ -129,15 +231,17 @@ export default function MainWindow() {
     // --- Normal potting ---
     if ((expectedBall === "red" && color !== "red") || (expectedBall === "color" && color === "red"))
       return;
+    if (color === "red" && redCount === 0) return;
+
+    pushUndoSnapshot();
 
     const points = BALL_POINTS[color];
     if (isFirstPlayerTurn) {
       setFirstScore(prev => prev + points);
-      setPlayer1Shots(prev => [...prev, color]);
     } else {
       setSecondScore(prev => prev + points);
-      setPlayer2Shots(prev => [...prev, color]);
     }
+    appendHistory({ player: getCurrentPlayerId(), type: "pot", color, points });
     setCurrentBreak(prev => prev + points);
 
     if (color === "red") {
@@ -148,60 +252,52 @@ export default function MainWindow() {
       if (lastRedColorPending) {
         setLastRedColorPending(false);
         setClearanceIndex(0); // start sequence potting
+        setExpectedBall("sequence");
+      } else {
+        setExpectedBall(redCount > 0 ? "red" : "sequence");
       }
-      setExpectedBall(redCount > 0 ? "red" : lastRedColorPending ? "color" : "sequence");
     }
   };
 
   // --- Undo last shot ---
   const undoLastShot = () => {
-    if (gameOver || isFoulActive || frameOver) return;
-    const shots = isFirstPlayerTurn ? player1Shots : player2Shots;
-    if (shots.length === 0) return;
-
-    const lastBall = shots[shots.length - 1];
-    const points = BALL_POINTS[lastBall];
-
-    if (isFirstPlayerTurn) {
-      setFirstScore(prev => Math.max(prev - points, 0));
-      setCurrentBreak(prev => Math.max(prev - points, 0));
-      setPlayer1Shots(prev => prev.slice(0, -1));
-    } else {
-      setSecondScore(prev => Math.max(prev - points, 0));
-      setCurrentBreak(prev => Math.max(prev - points, 0));
-      setPlayer2Shots(prev => prev.slice(0, -1));
-    }
-
-    setExpectedBall(lastBall === "red" ? "red" : "color");
-    if (lastBall === "red") setRedCount(prev => Math.min(prev + 1, 15));
-    if (redCount === 0) setClearanceIndex(prev => Math.max(prev - 1, 0));
+    if (undoStack.length === 0) return;
+    const previous = undoStack[undoStack.length - 1];
+    setUndoStack(prev => prev.slice(0, -1));
+    restoreSnapshot(previous);
   };
 
   // --- Foul ---
   const foul = () => {
     if (gameOver || isFoulActive || frameOver) return;
+    pushUndoSnapshot();
     setCurrentBreak(0);
     setIsFirstPlayerTurn(prev => !prev);
-    setExpectedBall("red");
+    applyExpectedBallAfterTurnChange();
     setIsFoulActive(true);
   };
 
   const handleFoulPoints = (points: 4 | 5 | 6 | 7) => {
     if (gameOver || !isFoulActive || frameOver) return;
+    pushUndoSnapshot();
+    const receiver = getCurrentPlayerId();
     if (isFirstPlayerTurn) setFirstScore(prev => prev + points);
     else setSecondScore(prev => prev + points);
+    appendHistory({ player: receiver, type: "foul", points });
 
     setIsFoulActive(false);
     setCurrentBreak(0);
-    setExpectedBall("red");
+    applyExpectedBallAfterTurnChange();
   };
 
   // --- End turn ---
   const endTurn = () => {
     if (gameOver || isFoulActive || frameOver) return;
+    pushUndoSnapshot();
+    appendHistory({ player: getCurrentPlayerId(), type: "miss" });
     setIsFirstPlayerTurn(prev => !prev);
     setCurrentBreak(0);
-    setExpectedBall("red");
+    applyExpectedBallAfterTurnChange();
   };
 
   // --- End frame ---
@@ -216,8 +312,6 @@ export default function MainWindow() {
     setRedCount(15);
     setFrameNumber(prev => prev + 1);
     setIsFirstPlayerTurn(true);
-    setPlayer1Shots([]);
-    setPlayer2Shots([]);
     setExpectedBall("red");
     setFrameTime(0);
     setIsFoulActive(false);
@@ -225,12 +319,16 @@ export default function MainWindow() {
     setFrameWinner(null);
     setClearanceIndex(0);
     setLastRedColorPending(false);
+    setHistory([]);
+    setEventCounter(0);
+    setUndoStack([]);
 
     if (frameNumber >= totalFrames) setGameOver(true);
   };
 
   // --- Reset game ---
   const resetGame = () => {
+    setUndoStack([]);
     setFirstScore(0);
     setSecondScore(0);
     setFirstFrame(0);
@@ -241,8 +339,8 @@ export default function MainWindow() {
     setRedCount(15);
     setGameOver(false);
     setGameStarted(false);
-    setPlayer1Shots([]);
-    setPlayer2Shots([]);
+    setHistory([]);
+    setEventCounter(0);
     setExpectedBall("red");
     setIsFoulActive(false);
     setFrameTime(0);
@@ -256,6 +354,8 @@ export default function MainWindow() {
   };
 
   const difference = Math.abs(firstScore - secondScore);
+  const player1History = history.filter(item => item.player === 1);
+  const player2History = history.filter(item => item.player === 2);
 
   // --- Start game ---
   const startGame = (e: React.FormEvent) => {
@@ -267,12 +367,14 @@ export default function MainWindow() {
   // --- Pre-game setup ---
   if (!gameStarted) {
     return (
-      <div className="flex flex-col justify-center items-center">
+      <div className="flex flex-col justify-center items-center px-2">
         <form
-          className="flex flex-col gap-4 bg-[#232334] p-6 rounded-lg shadow-lg text-black min-w-[40rem]"
+          className="flex flex-col gap-4 bg-[#232334] p-4 md:p-6 rounded-lg shadow-lg text-black w-full max-w-2xl"
           onSubmit={startGame}
         >
-          <h2 className="text-3xl text-white text-center font-semibold">Snooker Scoreboard</h2>
+          <h2 className="text-2xl md:text-3xl text-white text-center font-semibold">
+            Online Snooker Scoreboard
+          </h2>
 
           <h3 className="text-white">Match Title:</h3>
           <input
@@ -324,20 +426,22 @@ export default function MainWindow() {
     <>
       {/* Match Title */}
       {gameStarted && (
-        <h1 className="text-center font-bold text-5xl mb-6 text-white">{matchTitle}</h1>
+        <h1 className="text-center font-bold text-3xl md:text-5xl mb-4 md:mb-6 text-white">
+          {matchTitle}
+        </h1>
       )}
 
       {/* Player Windows and Center Stats */}
-      <div className="rounded-2xl grid grid-cols-[1fr_300px_1fr] gap-2">
+      <div className="rounded-2xl grid grid-cols-1 md:grid-cols-[1fr_260px_1fr] lg:grid-cols-[1fr_300px_1fr] gap-2">
         <PlayerWindow
           name={player1Name}
           score={firstScore}
           isTurn={isFirstPlayerTurn}
-          shots={player1Shots}
+          history={player1History}
           ballClasses={BALL_CLASSES}
         />
-        <section className="background px-4 py-7 grid gap-4 rounded-sm">
-          <div className="grid grid-cols-3 text-center text-4xl font-bold pb-5">
+        <section className="background px-3 md:px-4 py-5 md:py-7 grid gap-4 rounded-sm order-first md:order-none">
+          <div className="grid grid-cols-3 text-center text-3xl md:text-4xl font-bold pb-2 md:pb-5">
             <span>{firstFrame}</span>
             <span>({frameNumber})</span>
             <span>{secondFrame}</span>
@@ -356,7 +460,7 @@ export default function MainWindow() {
           </div>
           {frameOver && (
             <div className="fixed inset-0 flex justify-center items-center bg-black/50 z-50">
-              <div className="bg-[#2c2c3f] p-6 rounded-lg flex flex-col gap-4 w-96 text-center shadow-lg">
+              <div className="bg-[#2c2c3f] p-6 rounded-lg flex flex-col gap-4 w-[90vw] max-w-md text-center shadow-lg">
                 <p className="text-lg font-semibold">{frameWinner} wins the frame!</p>
                 <button
                   onClick={endFrame}
@@ -383,7 +487,7 @@ export default function MainWindow() {
           name={player2Name}
           score={secondScore}
           isTurn={!isFirstPlayerTurn}
-          shots={player2Shots}
+          history={player2History}
           ballClasses={BALL_CLASSES}
         />
       </div>
@@ -391,30 +495,33 @@ export default function MainWindow() {
       {/* Ball Buttons */}
       {!gameOver && !isFoulActive && !frameOver && (
         <section className="mt-2 background rounded-sm py-6">
-          <div className="flex gap-4 justify-center items-center">
+          <div className="flex flex-wrap gap-2 md:gap-4 justify-center items-center px-2">
 
             {(["red", "yellow", "green", "brown", "blue", "pink", "black"] as BallColor[]).map(color => {
               let isDisabled = false;
+              const isSequenceActive = redCount === 0 && !lastRedColorPending;
 
               // Determine which balls are active
-              if (expectedBall === "red") isDisabled = color !== "red";
+              if (color === "red" && redCount === 0) isDisabled = true;
+              else if (isSequenceActive) isDisabled = CLEARANCE_ORDER[clearanceIndex] !== color;
+              else if (expectedBall === "red") isDisabled = color !== "red";
               else if (expectedBall === "color") isDisabled = color === "red";
               else if (expectedBall === "sequence") isDisabled = CLEARANCE_ORDER[clearanceIndex] !== color;
 
-              // Set button classes based on active/disabled state
+              // Disabled balls are rendered neutral grey to make state obvious.
               const buttonClass = isDisabled
-                ? `${BALL_CLASSES[color]} opacity-30 cursor-not-allowed` // greyed out
-                : BALL_CLASSES[color]; // fully colored
+                ? "bg-gray-600 text-gray-300 opacity-70 cursor-not-allowed"
+                : BALL_CLASSES[color];
 
               return (
                 <button
                   key={color}
                   onClick={() => potBall(color)}
                   disabled={isDisabled}
-                  className={`ball_button flex items-center justify-center text-white text-xl font-semibold ${buttonClass}`}
+                  className={`ball_button flex items-center justify-center text-white font-semibold ${buttonClass}`}
                 >
                   {BALL_POINTS[color]}
-                  {color === "red" && redCount > 0 && <span className="ml-2 text-2xl">× {redCount}</span>}
+                  {color === "red" && redCount > 0 && <span className="ml-1 md:ml-2 text-lg md:text-2xl">x {redCount}</span>}
                 </button>
               );
             })}
@@ -425,11 +532,11 @@ export default function MainWindow() {
       {/* Foul Points */}
       {!gameOver && isFoulActive && (
         <section className="mt-2 background rounded-sm py-6">
-          <div className="flex gap-4 justify-center items-center">
+          <div className="flex flex-wrap gap-2 md:gap-4 justify-center items-center px-2">
             {[4, 5, 6, 7].map(val => (
               <button
                 key={val}
-                className="ball_button bg-gray-600 flex items-center justify-center text-white text-xl font-semibold"
+                className="ball_button bg-gray-600 flex items-center justify-center text-white font-semibold"
                 onClick={() => handleFoulPoints(val as 4 | 5 | 6 | 7)}
               >
                 {val}
@@ -441,13 +548,13 @@ export default function MainWindow() {
 
       {/* Function Buttons */}
       <section className="mt-2 background rounded-sm py-6">
-        <div className="flex gap-4 justify-center items-center">
+        <div className="flex flex-wrap gap-2 md:gap-4 justify-center items-center px-2">
           {!gameOver ? (
             <>
               <button
                 onClick={undoLastShot}
-                disabled={isFoulActive || (isFirstPlayerTurn ? player1Shots.length === 0 : player2Shots.length === 0)}
-                className={`funcButton bg-green-600 text-black ${isFoulActive || (isFirstPlayerTurn ? player1Shots.length : player2Shots.length) === 0
+                disabled={undoStack.length === 0}
+                className={`funcButton bg-green-600 text-black ${undoStack.length === 0
                   ? "opacity-30 cursor-not-allowed"
                   : ""
                   }`}
@@ -490,7 +597,7 @@ export default function MainWindow() {
       {/* End Frame & Game Confirmation */}
       {showEndFrameConfirm && (
         <div className="fixed inset-0 flex justify-center items-center bg-black/50 z-50">
-          <div className="bg-[#2c2c3f] p-6 rounded-lg flex flex-col gap-4 w-96 text-center shadow-lg">
+          <div className="bg-[#2c2c3f] p-6 rounded-lg flex flex-col gap-4 w-[90vw] max-w-md text-center shadow-lg">
             <p className="text-lg font-semibold">You are about to end the frame. Confirm?</p>
             <div className="flex justify-center gap-4">
               <button
@@ -512,7 +619,7 @@ export default function MainWindow() {
 
       {showEndGameConfirm && (
         <div className="fixed inset-0 flex justify-center items-center bg-black/50 z-50">
-          <div className="bg-[#2c2c3f] p-6 rounded-lg flex flex-col gap-4 w-96 text-center shadow-lg">
+          <div className="bg-[#2c2c3f] p-6 rounded-lg flex flex-col gap-4 w-[90vw] max-w-md text-center shadow-lg">
             <p className="text-lg font-semibold">You are about to end the match. Confirm?</p>
             <div className="flex justify-center gap-4">
               <button
@@ -534,3 +641,4 @@ export default function MainWindow() {
     </>
   );
 }
+
